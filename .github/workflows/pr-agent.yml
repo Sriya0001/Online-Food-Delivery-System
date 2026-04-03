@@ -20,5 +20,7 @@ jobs:
       - name: Qodo Merge action
         uses: Codium-ai/pr-agent@main
         env:
-          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          CONFIG.AI_PROVIDER: "groq"
+          GROQ.API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ.MODEL: "llama3-8b-8192"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
