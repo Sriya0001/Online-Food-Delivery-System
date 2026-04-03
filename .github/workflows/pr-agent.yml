@@ -20,11 +20,10 @@ jobs:
       - name: Qodo Merge action
         uses: Codium-ai/pr-agent@main
         env:
-          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
-          OPENAI.API_BASE: "https://api.groq.com/openai/v1"
-          CONFIG.MODEL: "groq/llama3-8b-8192"
-          CONFIG.MODEL_TURBO: "groq/llama3-8b-8192"
-          CONFIG.FALLBACK_MODELS: "groq/llama3-8b-8192"
+          CONFIG.AI_PROVIDER: "google"
+          GOOGLE.GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CONFIG.MODEL: "gemini/gemini-1.5-flash"
+          CONFIG.MODEL_TURBO: "gemini/gemini-1.5-flash"
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "true"
