@@ -1,4 +1,3 @@
- 
 class PaymentService:
     def __init__(self):
         self.transactions = []
@@ -18,3 +17,14 @@ class PaymentService:
             if t["order_id"] == order_id:
                 return t
         return None
+
+    def refund_payment(self, order_id):
+        for t in self.transactions:
+            if t["order_id"] == order_id:
+                t["status"] = "Refunded"
+                return f"Order {order_id} refunded successfully"
+        return "Transaction not found"
+
+    def get_payment_summary(self):
+        total = sum(t["amount"] for t in self.transactions)
+        return f"Total transactions: {len(self.transactions)}, Total amount: {total}"
