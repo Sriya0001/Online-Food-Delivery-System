@@ -1,0 +1,24 @@
+name: Qodo Merge Review
+
+on:
+  pull_request:
+  pull_request_review_comment:
+    types: [created]
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  pr_agent_job:
+    runs-on: ubuntu-latest
+    name: Run Qodo Merge
+    steps:
+      - name: Qodo Merge action
+        uses: Codium-ai/pr-agent@main
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
