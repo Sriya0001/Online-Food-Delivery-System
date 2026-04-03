@@ -1,4 +1,3 @@
- 
 class InventoryManager:
     def __init__(self):
         self.stock = {}
@@ -14,3 +13,7 @@ class InventoryManager:
             self.stock[item_name] -= quantity
             return True
         return False
+
+    def update_stock(self, item_name, quantity):
+        self.stock[item_name] = quantity
+        return f"Stock updated for {item_name} to {quantity} units"
