@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickBite — Restaurant Dashboard</title>
+  <meta name="description" content="Restaurant portal to manage and process incoming orders." />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+  <!-- ── Navbar ────────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <a class="navbar-brand" href="#">
+      <span class="brand-icon">🍳</span>
+      <span class="brand-name">Restaurant Portal</span>
+    </a>
+    <div class="navbar-right">
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">R</div>
+        <span id="user-name">Loading…</span>
+      </div>
+      <button class="nav-link" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- ── Page Content ──────────────────────────────────────────────────────── -->
+  <main class="page-wrapper">
+
+    <div class="page-header flex justify-between items-center">
+      <div>
+        <h1 class="page-title">Order Management</h1>
+        <p class="page-subtitle">Review and action incoming customer orders</p>
+      </div>
+      <button class="btn btn-secondary" onclick="loadAllOrders()">↻ Refresh</button>
+    </div>
+
+    <!-- ── Stats Row ─────────────────────────────────────────────────────── -->
+    <div class="grid-4 section" id="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-blue">📋</div>
+        <div><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total Orders</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-orange">⏳</div>
+        <div><div class="stat-value" id="stat-pending">—</div><div class="stat-label">Pending</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-green">✅</div>
+        <div><div class="stat-value" id="stat-accepted">—</div><div class="stat-label">Accepted</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-purple">🚚</div>
+        <div><div class="stat-value" id="stat-delivered">—</div><div class="stat-label">Delivered</div></div>
+      </div>
+    </div>
+
+    <!-- ── Tab Switcher ──────────────────────────────────────────────────── -->
+    <div class="filter-tabs">
+      <button class="filter-tab active" onclick="switchTab('pending', this)">⏳ Pending Orders</button>
+      <button class="filter-tab" onclick="switchTab('all', this)">📋 All Orders</button>
+    </div>
+
+    <!-- Pending orders section -->
+    <div id="section-pending">
+      <div class="section-title">⏳ Awaiting Action</div>
+      <div id="pending-list">
+        <div class="empty-state"><span class="spinner"></span></div>
+      </div>
+    </div>
+
+    <!-- All orders section (hidden by default) -->
+    <div id="section-all" class="hidden">
+      <div class="section-title">📋 All Orders</div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th>Items</th>
+              <th>Total</th>
+              <th>Status</th>
+              <th>Time</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="all-orders-body">
+            <tr><td colspan="7" style="text-align:center; padding:2rem; color:var(--text-muted);">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="../js/api.js"></script>
+  <script>
+    let allOrders = [];
+    let currentTab = 'pending';
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    window.addEventListener('load', async () => {
+      const user = await requireAuth('restaurant');
+      if (!user) return;
+      populateNavbar(user);
+      await loadAllOrders();
+      // Auto-refresh every 30 seconds
+      setInterval(loadAllOrders, 30000);
+    });
+
+    // ── Tab switching ─────────────────────────────────────────────────────────
+    function switchTab(tab, el) {
+      currentTab = tab;
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById('section-pending').classList.toggle('hidden', tab !== 'pending');
+      document.getElementById('section-all').classList.toggle('hidden', tab !== 'all');
+    }
+
+    // ── Load all orders ───────────────────────────────────────────────────────
+    async function loadAllOrders() {
+      try {
+        allOrders = await apiFetch('/api/orders/all');
+        updateStats(allOrders);
+        renderPendingOrders(allOrders.filter(o => o.status === 'Placed'));
+        renderAllOrdersTable(allOrders);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // ── Update stat counters ──────────────────────────────────────────────────
+    function updateStats(orders) {
+      document.getElementById('stat-total').textContent    = orders.length;
+      document.getElementById('stat-pending').textContent  = orders.filter(o => o.status === 'Placed').length;
+      document.getElementById('stat-accepted').textContent = orders.filter(o => ['Accepted','Preparing','Out for Delivery'].includes(o.status)).length;
+      document.getElementById('stat-delivered').textContent = orders.filter(o => o.status === 'Delivered').length;
+    }
+
+    // ── Pending orders list ───────────────────────────────────────────────────
+    function renderPendingOrders(orders) {
+      const el = document.getElementById('pending-list');
+
+      if (orders.length === 0) {
+        el.innerHTML = `<div class="empty-state">
+          <span class="empty-icon">✅</span>
+          <h3>All caught up!</h3>
+          <p>No pending orders right now. Well done!</p>
+        </div>`;
+        return;
+      }
+
+      el.innerHTML = orders.map(order => `
+        <div class="order-card mb-2" id="pending-${order.id}" style="margin-bottom:1rem; border-left: 3px solid var(--warning);">
+          <div class="order-header">
+            <div>
+              <div class="order-id-label">Order #${order.id}</div>
+              <div class="order-id-value">${order.customer_name}</div>
+              <div class="order-meta">${formatDate(order.created_at)}</div>
+            </div>
+            <span class="${getStatusBadgeClass(order.status)}">${order.status}</span>
+          </div>
+
+          <div class="divider" style="margin:0.75rem 0;"></div>
+
+          <ul class="order-items-list">
+            ${renderItemsList(order.items)}
+          </ul>
+
+          <div class="order-footer" style="margin-top:0.75rem;">
+            <span class="text-muted text-sm">${order.items.length} item(s)</span>
+            <span class="order-total-price">${formatCurrency(order.total_price)}</span>
+          </div>
+
+          <div class="order-actions">
+            <button class="btn btn-success btn-sm" onclick="updateStatus(${order.id}, 'Accepted')">
+              ✓ Accept
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="updateStatus(${order.id}, 'Rejected')">
+              ✕ Reject
+            </button>
+            <button class="btn btn-warning btn-sm" onclick="updateStatus(${order.id}, 'Preparing')">
+              🍳 Start Preparing
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ── All orders table ──────────────────────────────────────────────────────
+    function renderAllOrdersTable(orders) {
+      const tbody = document.getElementById('all-orders-body');
+      if (orders.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:2rem; color:var(--text-muted);">No orders yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = orders.map(order => {
+        const itemSummary = order.items.map(i => `${i.item_name} ×${i.quantity}`).join(', ');
+        const actions = getRestaurantActions(order.status, order.id);
+        return `
+          <tr>
+            <td><strong>#${order.id}</strong></td>
+            <td>${order.customer_name}</td>
+            <td style="font-size:0.8rem; color:var(--text-muted); max-width:180px;">${itemSummary}</td>
+            <td>${formatCurrency(order.total_price)}</td>
+            <td><span class="${getStatusBadgeClass(order.status)}">${order.status}</span></td>
+            <td style="font-size:0.78rem; color:var(--text-muted);">${formatDate(order.created_at)}</td>
+            <td>${actions}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    // ── What actions can the restaurant take per status? ──────────────────────
+    function getRestaurantActions(status, id) {
+      switch (status) {
+        case 'Placed':
+          return `<button class="btn btn-success btn-sm" onclick="updateStatus(${id},'Accepted')">Accept</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="updateStatus(${id},'Rejected')">Reject</button>`;
+        case 'Accepted':
+          return `<button class="btn btn-warning btn-sm" onclick="updateStatus(${id},'Preparing')">Preparing</button>`;
+        case 'Preparing':
+          return `<span class="text-muted text-xs">Awaiting pickup</span>`;
+        default:
+          return `<span class="text-muted text-xs">—</span>`;
+      }
+    }
+
+    // ── Update order status ───────────────────────────────────────────────────
+    async function updateStatus(orderId, status) {
+      try {
+        const res = await apiFetch(`/api/orders/${orderId}/status`, 'PUT', { status });
+        showToast(res.message, 'success');
+        await loadAllOrders();   // Refresh all data
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+  </script>
+</body>
+</html>

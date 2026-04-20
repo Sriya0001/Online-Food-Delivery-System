@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickBite — My Orders</title>
+  <meta name="description" content="View the status of all your food orders." />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+  <!-- ── Navbar ────────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <a class="navbar-brand" href="/customer/dashboard.html">
+      <span class="brand-icon">🍕</span>
+      <span class="brand-name">QuickBite</span>
+    </a>
+    <div class="navbar-right">
+      <a class="nav-link" href="/customer/dashboard.html">🍽️ Menu</a>
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">U</div>
+        <span id="user-name">Loading…</span>
+      </div>
+      <button class="nav-link" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- ── Page Content ──────────────────────────────────────────────────────── -->
+  <main class="page-wrapper">
+
+    <div class="page-header flex justify-between items-center">
+      <div>
+        <h1 class="page-title">My Orders</h1>
+        <p class="page-subtitle">Track all your past and active orders</p>
+      </div>
+      <a class="btn btn-primary" href="/customer/dashboard.html">+ New Order</a>
+    </div>
+
+    <!-- Order list container -->
+    <div id="orders-container">
+      <div class="empty-state">
+        <span class="empty-icon"><span class="spinner" style="width:36px;height:36px;"></span></span>
+        <p class="mt-2 text-muted">Loading your orders…</p>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="../js/api.js"></script>
+  <script>
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    window.addEventListener('load', async () => {
+      const user = await requireAuth('customer');
+      if (!user) return;
+      populateNavbar(user);
+      await loadOrders();
+    });
+
+    // ── Load orders ───────────────────────────────────────────────────────────
+    async function loadOrders() {
+      try {
+        const orders = await apiFetch('/api/orders');
+        renderOrders(orders);
+      } catch (err) {
+        document.getElementById('orders-container').innerHTML = `
+          <div class="empty-state">
+            <span class="empty-icon">⚠️</span>
+            <h3>Could not load orders</h3>
+            <p>${err.message}</p>
+          </div>`;
+      }
+    }
+
+    // ── Render order cards ────────────────────────────────────────────────────
+    function renderOrders(orders) {
+      const container = document.getElementById('orders-container');
+
+      if (orders.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <span class="empty-icon">📦</span>
+            <h3>No orders yet</h3>
+            <p>Head to the menu and place your first order!</p>
+            <a class="btn btn-primary mt-2" href="/customer/dashboard.html">Browse Menu</a>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = orders.map(order => `
+        <div class="order-card mb-2" style="margin-bottom:1rem;">
+          <div class="order-header">
+            <div>
+              <div class="order-id-label">Order ID</div>
+              <div class="order-id-value">#${order.id}</div>
+              <div class="order-meta">${formatDate(order.created_at)}</div>
+            </div>
+            <span class="${getStatusBadgeClass(order.status)}">${order.status}</span>
+          </div>
+
+          <div class="divider" style="margin: 0.75rem 0;"></div>
+
+          <!-- Line items -->
+          <ul class="order-items-list">
+            ${renderItemsList(order.items)}
+          </ul>
+
+          <div class="order-footer">
+            <span class="text-muted text-sm">${order.items.length} item(s)</span>
+            <span class="order-total-price">${formatCurrency(order.total_price)}</span>
+          </div>
+
+          <!-- Progress tracker -->
+          ${renderProgressTracker(order.status)}
+        </div>
+      `).join('');
+    }
+
+    // ── Render a visual progress bar for order status ─────────────────────────
+    function renderProgressTracker(status) {
+      const steps = ['Placed', 'Accepted', 'Preparing', 'Out for Delivery', 'Delivered'];
+      if (status === 'Rejected') {
+        return `<div style="margin-top:0.75rem; padding:0.5rem 0.75rem; background:rgba(239,68,68,0.1); border-radius:8px; font-size:0.8rem; color:#f87171;">
+          ✕ This order was rejected by the restaurant.
+        </div>`;
+      }
+
+      const currentIdx = steps.indexOf(status);
+
+      return `
+        <div style="margin-top:1rem; display:flex; gap:0; align-items:center;">
+          ${steps.map((step, idx) => {
+            const done   = idx <= currentIdx;
+            const active = idx === currentIdx;
+            return `
+              <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div style="width:20px; height:20px; border-radius:50%;
+                  background:${done ? 'var(--accent)' : 'var(--surface-3)'};
+                  border: 2px solid ${done ? 'var(--accent)' : 'var(--border)'};
+                  display:flex; align-items:center; justify-content:center;
+                  font-size:0.6rem; font-weight:700; color:${done ? '#fff' : 'var(--text-muted)'};
+                  box-shadow: ${active ? '0 0 10px var(--accent-glow)' : 'none'};
+                  transition: all 0.3s;">
+                  ${done ? '✓' : idx + 1}
+                </div>
+                <div style="font-size:0.6rem; color:${done ? 'var(--text)' : 'var(--text-muted)'}; text-align:center; line-height:1.2;">
+                  ${step}
+                </div>
+              </div>
+              ${idx < steps.length - 1 ? `<div style="flex:1; height:2px; background:${idx < currentIdx ? 'var(--accent)' : 'var(--surface-3)'}; margin-top:-14px;"></div>` : ''}
+            `;
+          }).join('')}
+        </div>`;
+    }
+  </script>
+</body>
+</html>

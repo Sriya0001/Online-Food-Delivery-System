@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickBite — Menu</title>
+  <meta name="description" content="Browse our food menu and place your order online." />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+  <!-- ── Navbar ────────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <a class="navbar-brand" href="/customer/dashboard.html">
+      <span class="brand-icon">🍕</span>
+      <span class="brand-name">QuickBite</span>
+    </a>
+    <div class="navbar-right">
+      <a class="nav-link" href="/customer/orders.html">📦 My Orders</a>
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">U</div>
+        <span id="user-name">Loading…</span>
+      </div>
+      <button class="nav-link" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- ── Page Content ──────────────────────────────────────────────────────── -->
+  <main class="page-wrapper">
+
+    <div class="page-header">
+      <h1 class="page-title">Browse Our Menu</h1>
+      <p class="page-subtitle">Fresh ingredients, amazing flavours — order in minutes</p>
+    </div>
+
+    <!-- Filter row: category tabs on left, Pure Veg toggle on right -->
+    <div class="filter-row">
+      <!-- Category filter tabs (populated dynamically) -->
+      <div class="filter-tabs" id="category-tabs">
+        <button class="filter-tab active" data-category="all" onclick="filterCategory('all', this)">All</button>
+      </div>
+
+      <!-- Pure Veg toggle -->
+      <label class="veg-toggle-wrapper" id="veg-toggle-wrapper" for="veg-toggle-input">
+        <!-- Indian restaurant–style green dot -->
+        <span class="veg-dot veg-dot-veg"></span>
+        <span class="toggle-label">Pure Veg</span>
+        <div class="toggle-switch">
+          <input type="checkbox" id="veg-toggle-input" onchange="onVegToggle()" />
+          <span class="toggle-slider"></span>
+        </div>
+      </label>
+    </div>
+
+    <!-- Menu grid -->
+    <div class="grid-4" id="menu-grid">
+      <!-- Cards injected by JS -->
+      <div class="empty-state">
+        <div class="spinner"></div>
+        <p class="mt-2 text-muted">Loading menu…</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── Cart Overlay + Sidebar ────────────────────────────────────────────── -->
+  <div class="cart-overlay" id="cart-overlay" onclick="closeCart()"></div>
+
+  <aside class="cart-sidebar" id="cart-sidebar">
+    <div class="cart-header">
+      <h2>🛒 Your Cart <span class="cart-count-pill" id="cart-count">0</span></h2>
+      <button class="cart-close" onclick="closeCart()">✕</button>
+    </div>
+    <div class="cart-items" id="cart-items">
+      <div class="empty-state">
+        <span class="empty-icon">🛒</span>
+        <h3>Cart is empty</h3>
+        <p>Add items from the menu to get started!</p>
+      </div>
+    </div>
+    <div class="cart-footer" id="cart-footer" style="display:none;">
+      <div class="cart-total-row">
+        <span class="cart-total-label">Total</span>
+        <span class="cart-total-value" id="cart-total">₹ 0.00</span>
+      </div>
+      <button class="btn btn-primary btn-full btn-lg" onclick="placeOrder()" id="place-order-btn">
+        Place Order
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Floating Cart Button ──────────────────────────────────────────────── -->
+  <button class="cart-fab" id="cart-fab" onclick="openCart()" style="display:none;">
+    🛒 Cart
+    <span class="cart-fab-count" id="cart-fab-count">0</span>
+  </button>
+
+  <script src="../js/api.js"></script>
+  <script>
+    // ── State ─────────────────────────────────────────────────────────────────
+    // cart = { menuItemId: { name, price, quantity } }
+    let cart         = {};
+    let allMenuItems = [];
+    let activeCategory = 'all';
+    let vegOnly        = false;   // tracks Pure Veg toggle state
+
+    // Category → food emoji mapping for nicer display
+    const CATEGORY_EMOJIS = {
+      'Burgers':        '🍔',
+      'Pizza':          '🍕',
+      'Rice & Biryani': '🍚',
+      'Drinks':         '🥤',
+      'Pasta':          '🍝',
+      'Salads':         '🥗',
+      'Desserts':       '🍰',
+      'Chicken':        '🍗',
+    };
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    window.addEventListener('load', async () => {
+      const user = await requireAuth('customer');
+      if (!user) return;
+      populateNavbar(user);
+      await loadMenu();
+    });
+
+    // ── Load menu from API ────────────────────────────────────────────────────
+    async function loadMenu() {
+      try {
+        allMenuItems = await apiFetch('/api/menu');
+        buildCategoryTabs();
+        applyFilters();
+      } catch (err) {
+        document.getElementById('menu-grid').innerHTML =
+          `<div class="empty-state" style="grid-column:1/-1;">
+            <span class="empty-icon">⚠️</span>
+            <h3>Could not load menu</h3>
+            <p>${err.message}</p>
+          </div>`;
+      }
+    }
+
+    // ── Build dynamic category filter tabs ────────────────────────────────────
+    function buildCategoryTabs() {
+      const categories = [...new Set(allMenuItems.map(i => i.category))].sort();
+      const tabsEl     = document.getElementById('category-tabs');
+
+      categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = 'filter-tab';
+        btn.dataset.category = cat;
+        btn.textContent = (CATEGORY_EMOJIS[cat] || '🍴') + ' ' + cat;
+        btn.onclick = () => filterCategory(cat, btn);
+        tabsEl.appendChild(btn);
+      });
+    }
+
+    // ── Category filter ───────────────────────────────────────────────────────
+    function filterCategory(cat, el) {
+      activeCategory = cat;
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      applyFilters();
+    }
+
+    // ── Veg toggle handler ────────────────────────────────────────────────────
+    function onVegToggle() {
+      vegOnly = document.getElementById('veg-toggle-input').checked;
+      // Visually activate the wrapper pill
+      document.getElementById('veg-toggle-wrapper').classList.toggle('active', vegOnly);
+      applyFilters();
+    }
+
+    // ── Apply both filters (category + veg) and re-render ─────────────────────
+    function applyFilters() {
+      let items = allMenuItems;
+
+      if (activeCategory !== 'all') {
+        items = items.filter(i => i.category === activeCategory);
+      }
+      if (vegOnly) {
+        items = items.filter(i => i.is_veg === 1);
+      }
+
+      renderMenu(items);
+    }
+
+    // ── Render menu grid ──────────────────────────────────────────────────────
+    function renderMenu(items) {
+      const grid = document.getElementById('menu-grid');
+
+      if (items.length === 0) {
+        grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
+          <span class="empty-icon">${vegOnly ? '🥦' : '🍽️'}</span>
+          <h3>${vegOnly ? 'No veg items in this category' : 'No items in this category'}</h3>
+          ${vegOnly ? '<p>Try turning off the Pure Veg filter.</p>' : ''}
+        </div>`;
+        return;
+      }
+
+      grid.innerHTML = items.map(item => {
+        // Veg indicator dot (Indian restaurant convention)
+        const vegClass = item.is_veg ? 'veg-dot-veg' : 'veg-dot-nonveg';
+        const vegTitle = item.is_veg ? 'Vegetarian' : 'Non-Vegetarian';
+
+        return `
+        <div class="menu-card">
+          <div class="menu-card-emoji">${CATEGORY_EMOJIS[item.category] || '🍴'}</div>
+          <div class="menu-card-body">
+            <!-- Category label + veg dot on the same row -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.35rem;">
+              <div class="menu-card-category">${item.category}</div>
+              <span class="veg-dot ${vegClass}" title="${vegTitle}"></span>
+            </div>
+
+            <div class="menu-card-name">${item.name}</div>
+            <div class="menu-card-desc">${item.description || 'Freshly prepared with care.'}</div>
+
+            <!-- Calorie pill -->
+            ${item.calories ? `<div style="margin-top:0.5rem;"><span class="calorie-pill">🔥 ${item.calories} kcal</span></div>` : ''}
+
+            <div class="menu-card-footer">
+              <span class="menu-card-price">${formatCurrency(item.price)}</span>
+              <button class="btn btn-primary btn-sm" onclick="addToCart(${item.id}, '${escape(item.name)}', ${item.price})">
+                + Add
+              </button>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ── Cart Management ───────────────────────────────────────────────────────
+    function addToCart(id, name, price) {
+      const decodedName = unescape(name);
+      if (cart[id]) {
+        cart[id].quantity += 1;
+      } else {
+        cart[id] = { name: decodedName, price, quantity: 1 };
+      }
+      updateCartUI();
+      showToast(`${decodedName} added to cart!`, 'success');
+    }
+
+    function changeQty(id, delta) {
+      if (!cart[id]) return;
+      cart[id].quantity += delta;
+      if (cart[id].quantity <= 0) delete cart[id];
+      updateCartUI();
+    }
+
+    function updateCartUI() {
+      const totalItems = Object.values(cart).reduce((s, i) => s + i.quantity, 0);
+      const totalPrice = Object.values(cart).reduce((s, i) => s + i.price * i.quantity, 0);
+
+      // FAB
+      const fab = document.getElementById('cart-fab');
+      fab.style.display = totalItems > 0 ? 'flex' : 'none';
+      document.getElementById('cart-fab-count').textContent = totalItems;
+
+      // Sidebar count pill + total
+      document.getElementById('cart-count').textContent = totalItems;
+      document.getElementById('cart-total').textContent = formatCurrency(totalPrice);
+
+      // Cart items list
+      const itemsEl = document.getElementById('cart-items');
+      const footer  = document.getElementById('cart-footer');
+
+      if (totalItems === 0) {
+        itemsEl.innerHTML = `<div class="empty-state">
+          <span class="empty-icon">🛒</span>
+          <h3>Cart is empty</h3>
+          <p>Add items from the menu!</p>
+        </div>`;
+        footer.style.display = 'none';
+      } else {
+        footer.style.display = 'block';
+        itemsEl.innerHTML = Object.entries(cart).map(([id, item]) => `
+          <div class="cart-item">
+            <div class="cart-item-info">
+              <div class="cart-item-name">${item.name}</div>
+              <div class="cart-item-subtotal">${formatCurrency(item.price * item.quantity)}</div>
+            </div>
+            <div class="qty-controls">
+              <button class="qty-btn" onclick="changeQty(${id}, -1)">−</button>
+              <span class="qty-value">${item.quantity}</span>
+              <button class="qty-btn" onclick="changeQty(${id}, 1)">+</button>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+
+    // ── Cart sidebar open/close ───────────────────────────────────────────────
+    function openCart()  {
+      document.getElementById('cart-sidebar').classList.add('open');
+      document.getElementById('cart-overlay').classList.add('open');
+    }
+    function closeCart() {
+      document.getElementById('cart-sidebar').classList.remove('open');
+      document.getElementById('cart-overlay').classList.remove('open');
+    }
+
+    // ── Place order ───────────────────────────────────────────────────────────
+    async function placeOrder() {
+      const items = Object.entries(cart).map(([id, item]) => ({
+        menu_item_id: parseInt(id),
+        quantity: item.quantity,
+      }));
+
+      if (items.length === 0) return;
+
+      const btn = document.getElementById('place-order-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Placing order…';
+
+      try {
+        const res = await apiFetch('/api/orders', 'POST', { items });
+        cart = {};
+        updateCartUI();
+        closeCart();
+        showToast(`Order #${res.order_id} placed! Total: ${formatCurrency(res.total)}`, 'success');
+        setTimeout(() => window.location.href = '/customer/orders.html', 1500);
+      } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Place Order';
+      }
+    }
+  </script>
+</body>
+</html>

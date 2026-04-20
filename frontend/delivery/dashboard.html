@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickBite — Delivery Dashboard</title>
+  <meta name="description" content="Delivery agent portal for managing food deliveries." />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+  <!-- ── Navbar ────────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <a class="navbar-brand" href="#">
+      <span class="brand-icon">🛵</span>
+      <span class="brand-name">Delivery Portal</span>
+    </a>
+    <div class="navbar-right">
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">D</div>
+        <span id="user-name">Loading…</span>
+      </div>
+      <button class="nav-link" onclick="logout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- ── Page Content ──────────────────────────────────────────────────────── -->
+  <main class="page-wrapper">
+
+    <div class="page-header flex justify-between items-center">
+      <div>
+        <h1 class="page-title">Delivery Dashboard</h1>
+        <p class="page-subtitle">Pick up and deliver orders to happy customers</p>
+      </div>
+      <button class="btn btn-secondary" onclick="loadAll()">↻ Refresh</button>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="grid-2 section">
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-orange">📦</div>
+        <div>
+          <div class="stat-value" id="stat-available">—</div>
+          <div class="stat-label">Available for Pickup</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-green">✅</div>
+        <div>
+          <div class="stat-value" id="stat-delivered">—</div>
+          <div class="stat-label">Delivered by You</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Tab Switcher ──────────────────────────────────────────────────── -->
+    <div class="filter-tabs">
+      <button class="filter-tab active" onclick="switchTab('available', this)">📦 Available Pickups</button>
+      <button class="filter-tab" onclick="switchTab('assigned', this)">🛵 My Deliveries</button>
+    </div>
+
+    <!-- Available pickups -->
+    <div id="section-available">
+      <div class="section-title">📦 Ready for Pickup</div>
+      <p class="text-muted text-sm mb-2">These orders have been accepted by the restaurant and are waiting for a delivery agent.</p>
+      <div id="available-list">
+        <div class="empty-state"><span class="spinner"></span></div>
+      </div>
+    </div>
+
+    <!-- My assigned deliveries -->
+    <div id="section-assigned" class="hidden">
+      <div class="section-title">🛵 My Deliveries</div>
+      <div id="assigned-list">
+        <div class="empty-state"><span class="spinner"></span></div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="../js/api.js"></script>
+  <script>
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    window.addEventListener('load', async () => {
+      const user = await requireAuth('delivery');
+      if (!user) return;
+      populateNavbar(user);
+      await loadAll();
+      // Auto-refresh every 30 seconds
+      setInterval(loadAll, 30000);
+    });
+
+    // ── Tab switching ─────────────────────────────────────────────────────────
+    function switchTab(tab, el) {
+      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      document.getElementById('section-available').classList.toggle('hidden', tab !== 'available');
+      document.getElementById('section-assigned').classList.toggle('hidden', tab !== 'assigned');
+    }
+
+    // ── Load all data ─────────────────────────────────────────────────────────
+    async function loadAll() {
+      try {
+        const [available, assigned] = await Promise.all([
+          apiFetch('/api/delivery/available'),
+          apiFetch('/api/delivery/assigned'),
+        ]);
+        // Update stats
+        document.getElementById('stat-available').textContent = available.length;
+        document.getElementById('stat-delivered').textContent = assigned.filter(o => o.status === 'Delivered').length;
+        // Render sections
+        renderAvailable(available);
+        renderAssigned(assigned);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // ── Render available pickups ──────────────────────────────────────────────
+    function renderAvailable(orders) {
+      const el = document.getElementById('available-list');
+
+      if (orders.length === 0) {
+        el.innerHTML = `<div class="empty-state">
+          <span class="empty-icon">📭</span>
+          <h3>No orders ready for pickup</h3>
+          <p>Check back shortly. The restaurant is working on orders!</p>
+        </div>`;
+        return;
+      }
+
+      el.innerHTML = orders.map(order => `
+        <div class="order-card mb-2" style="margin-bottom:1rem; border-left: 3px solid var(--accent);">
+          <div class="order-header">
+            <div>
+              <div class="order-id-label">Order #${order.id}</div>
+              <div class="order-id-value">Customer: ${order.customer_name}</div>
+              <div class="order-meta">${formatDate(order.created_at)}</div>
+            </div>
+            <span class="${getStatusBadgeClass(order.status)}">${order.status}</span>
+          </div>
+          <div class="divider" style="margin:0.75rem 0;"></div>
+          <ul class="order-items-list">${renderItemsList(order.items)}</ul>
+          <div class="order-footer" style="margin-top:0.75rem;">
+            <span class="text-muted text-sm">${order.items.length} item(s)</span>
+            <span class="order-total-price">${formatCurrency(order.total_price)}</span>
+          </div>
+          <div class="order-actions">
+            <button class="btn btn-primary btn-sm" onclick="updateStatus(${order.id}, 'Out for Delivery')">
+              🛵 Pick Up & Start Delivery
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ── Render agent's own deliveries ─────────────────────────────────────────
+    function renderAssigned(orders) {
+      const el = document.getElementById('assigned-list');
+
+      if (orders.length === 0) {
+        el.innerHTML = `<div class="empty-state">
+          <span class="empty-icon">🛵</span>
+          <h3>No deliveries yet</h3>
+          <p>Pick up an available order to get started!</p>
+        </div>`;
+        return;
+      }
+
+      el.innerHTML = orders.map(order => `
+        <div class="order-card mb-2" style="margin-bottom:1rem;">
+          <div class="order-header">
+            <div>
+              <div class="order-id-label">Order #${order.id}</div>
+              <div class="order-id-value">Customer: ${order.customer_name}</div>
+              <div class="order-meta">${formatDate(order.created_at)}</div>
+            </div>
+            <span class="${getStatusBadgeClass(order.status)}">${order.status}</span>
+          </div>
+          <div class="divider" style="margin:0.75rem 0;"></div>
+          <ul class="order-items-list">${renderItemsList(order.items)}</ul>
+          <div class="order-footer" style="margin-top:0.75rem;">
+            <span class="text-muted text-sm">${order.items.length} item(s)</span>
+            <span class="order-total-price">${formatCurrency(order.total_price)}</span>
+          </div>
+          ${order.status === 'Out for Delivery' ? `
+            <div class="order-actions">
+              <button class="btn btn-success btn-sm" onclick="updateStatus(${order.id}, 'Delivered')">
+                ✓ Mark as Delivered
+              </button>
+            </div>` : ''}
+          ${order.status === 'Delivered' ? `
+            <div style="margin-top:0.75rem; padding:0.5rem 0.75rem; background:rgba(34,197,94,0.1); border-radius:8px; font-size:0.8rem; color:var(--success);">
+              ✓ Successfully delivered!
+            </div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    // ── Update delivery status ────────────────────────────────────────────────
+    async function updateStatus(orderId, status) {
+      try {
+        const res = await apiFetch(`/api/delivery/${orderId}/status`, 'PUT', { status });
+        showToast(res.message, 'success');
+        await loadAll();
+        // Switch to "My Deliveries" tab automatically when they pick up
+        if (status === 'Out for Delivery') {
+          const assignedTab = document.querySelectorAll('.filter-tab')[1];
+          switchTab('assigned', assignedTab);
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+  </script>
+</body>
+</html>

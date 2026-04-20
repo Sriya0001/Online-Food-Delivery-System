@@ -1,0 +1,5 @@
+# requirements.txt
+# Dependencies for the Online Food Delivery System (Python Flask backend)
+# Install with: pip install -r requirements.txt
+
+Flask>=2.3.0
